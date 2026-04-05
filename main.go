@@ -4,12 +4,27 @@ import (
 	"fmt"
 	"bufio"
 	"os"
+	"encoding/json"
+	"net/http"
 )
+
+type config struct {
+	next *string
+	previous *string
+}
 
 type cliCommand struct {
 	name string
 	description string
-	callback func() error
+	callback func(*config) error
+}
+
+type locationResponse struct {
+	Next *string `json:"next"`
+	Previous *string `json:"previous"`
+	Results []struct {
+		Name string `json:"name"`
+	} `json:"results"`
 }
 
 func main() {
@@ -17,16 +32,30 @@ func main() {
 
 	commands := map[string]cliCommand{}
 
+	cfg := &config{}
+
 	commands["exit"] = cliCommand{
-		name: "exit",
+		name:        "exit",
 		description: "Exit the Pokedex",
-		callback: commandExit,
+		callback:    commandExit,
+	}
+
+	commands["map"] = cliCommand{
+		name:        "map",
+		description: "Displays next 20 locations",
+		callback:    commandMap,
+	}
+
+	commands["mapb"] = cliCommand{
+		name:        "mapb",
+		description: "Displays previous 20 locations",
+		callback:    commandMapBack,
 	}
 
 	commands["help"] = cliCommand{
-		name: "help",
+		name:        "help",
 		description: "Displays a help message",
-		callback: commandHelp(commands),
+		callback:    commandHelp(commands),
 	}
 
 	for {
@@ -49,21 +78,21 @@ func main() {
 			continue
 		}
 
-		err := cmd.callback()
+		err := cmd.callback(cfg)
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 }
 
-func commandExit() error {
+func commandExit(cfg *config) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(commands map[string]cliCommand) func() error {
-	return func() error {
+func commandHelp(commands map[string]cliCommand) func(*config) error {
+	return func(cfg *config) error {
 		fmt.Println("Welcome to the Pokedex!")
 		fmt.Println("Usage:")
 
@@ -73,4 +102,63 @@ func commandHelp(commands map[string]cliCommand) func() error {
 
 		return nil
 	}
+}
+
+func fetchLocations(url string) (locationResponse, error) {
+	res, err := http.Get(url)
+	if err != nil {
+		return locationResponse{}, err
+	}
+	defer res.Body.Close()
+
+	var data locationResponse
+	err = json.NewDecoder(res.Body).Decode(&data)
+	if err != nil {
+		return locationResponse{}, err
+	}
+
+	return data, nil
+}
+
+func commandMap(cfg *config) error {
+	url := "https://pokeapi.co/api/v2/location-area"
+
+	if cfg.next != nil {
+		url = *cfg.next
+	}
+
+	data, err := fetchLocations(url)
+	if err != nil {
+		return err
+	}
+
+	cfg.next = data.Next
+	cfg.previous = data.Previous
+
+	for _, loc := range data.Results {
+		fmt.Println(loc.Name)
+	}
+
+	return nil
+}
+
+func commandMapBack(cfg *config) error {
+	if cfg.previous == nil {
+		fmt.Println("you're on the first page")
+		return nil
+	}
+
+	data, err := fetchLocations(*cfg.previous)
+	if err != nil {
+		return err
+	}
+
+	cfg.next = data.Next
+	cfg.previous = data.Previous
+
+	for _, loc := range data.Results {
+		fmt.Println(loc.Name)
+	}
+
+	return nil
 }
