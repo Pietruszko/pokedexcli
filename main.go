@@ -6,11 +6,15 @@ import (
 	"os"
 	"encoding/json"
 	"net/http"
+	"github.com/Pietruszko/pokedexcli/internal/pokecache"
+	"time"
+	"io"
 )
 
 type config struct {
 	next *string
 	previous *string
+	cache *pokecache.Cache
 }
 
 type cliCommand struct {
@@ -32,7 +36,9 @@ func main() {
 
 	commands := map[string]cliCommand{}
 
-	cfg := &config{}
+	cfg := &config{
+		cache: pokecache.NewCache(5 * time.Second),
+	}
 
 	commands["exit"] = cliCommand{
 		name:        "exit",
@@ -104,15 +110,32 @@ func commandHelp(commands map[string]cliCommand) func(*config) error {
 	}
 }
 
-func fetchLocations(url string) (locationResponse, error) {
+func fetchLocations(cfg *config, url string) (locationResponse, error) {
+	if data, ok := cfg.cache.Get(url); ok {
+		var cached locationResponse
+		err := json.Unmarshal(data, &cached)
+		if err != nil {
+			return locationResponse{}, err
+		}
+		fmt.Println("(cache hit)")
+		return cached, nil
+	}
+
 	res, err := http.Get(url)
 	if err != nil {
 		return locationResponse{}, err
 	}
 	defer res.Body.Close()
 
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return locationResponse{}, err
+	}
+	
+	cfg.cache.Add(url, body)
+
 	var data locationResponse
-	err = json.NewDecoder(res.Body).Decode(&data)
+	err = json.Unmarshal(body, &data)
 	if err != nil {
 		return locationResponse{}, err
 	}
@@ -127,7 +150,7 @@ func commandMap(cfg *config) error {
 		url = *cfg.next
 	}
 
-	data, err := fetchLocations(url)
+	data, err := fetchLocations(cfg, url)
 	if err != nil {
 		return err
 	}
@@ -148,7 +171,7 @@ func commandMapBack(cfg *config) error {
 		return nil
 	}
 
-	data, err := fetchLocations(*cfg.previous)
+	data, err := fetchLocations(cfg, *cfg.previous)
 	if err != nil {
 		return err
 	}
