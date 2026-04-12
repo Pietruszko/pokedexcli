@@ -43,7 +43,20 @@ type exploreResponse struct {
 
 type pokemon struct {
 	Name string `json:"name"`
+	Height int `json:"height"`
+	Weight int `json:"weight"`
 	BaseExperience int `json:"base_experience"`
+	Stats []struct {
+		BaseStat int `json:"base_stat"`
+		Stat struct {
+			Name string `json:"name"`
+		} `json:"stat"`
+	} `json:"stats"`
+	Types []struct {
+		Type struct {
+			Name string `json:"name"`
+		} `json:"type"`
+	} `json:"types"`
 }
 
 func main() {
@@ -92,6 +105,18 @@ func main() {
 		name:					"catch",
 		description:	"Catch a pokemon",
 		callback:			commandCatch,
+	}
+
+	commands["inspect"] = cliCommand{
+		name:					"inspect",
+		description:	"Inspect a caught pokemon",
+		callback:			commandInspect,
+	}
+
+	commands["pokedex"] = cliCommand{
+		name:					"pokedex",
+		description:	"Displays all caught pokemon",
+		callback:			commandPokedex,
 	}
 
 	for {
@@ -292,6 +317,52 @@ func commandCatch(cfg *config, args []string) error {
 		cfg.pokedex[name] = p
 	} else {
 		fmt.Printf("%s escaped!\n", name)
+	}
+
+	return nil
+}
+
+func commandInspect(cfg *config, args []string) error {
+	if len(args) == 0 {
+		fmt.Println("please provide a pokemon name")
+		return nil
+	}
+
+	name := args[0]
+
+	p, ok := cfg.pokedex[name]
+	if !ok {
+		fmt.Println("you have not caught that pokemon")
+		return nil
+	}
+
+	fmt.Printf("Name: %s\n", p.Name)
+	fmt.Printf("Height: %d\n", p.Height)
+	fmt.Printf("Weight: %d\n", p.Weight)
+
+	fmt.Println("Stats:")
+	for _, s := range p.Stats {
+		fmt.Printf("	-%s: %d\n", s.Stat.Name, s.BaseStat)
+	}
+
+	fmt.Println("Types:")
+	for _, t := range p.Types {
+		fmt.Printf("	- %s\n", t.Type.Name)
+	}
+
+	return nil
+}
+
+func commandPokedex(cfg *config, args []string) error {
+	if len(cfg.pokedex) == 0 {
+		fmt.Println("Your Pokedex is empty!")
+		return nil
+	}
+
+	fmt.Println("Your Pokedex:")
+
+	for name := range cfg.pokedex {
+		fmt.Printf(" - %s\n", name)
 	}
 
 	return nil
